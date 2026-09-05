@@ -1,8 +1,10 @@
 /** @type {import('next').NextConfig} */
+const isCapacitorExport = process.env.IS_CAPACITOR === 'true' && process.env.npm_lifecycle_event === 'build';
+
 const nextConfig = {
   reactStrictMode: true,
-  // Si se compila para Capacitor/APK, exporta HTML estático a /out
-  ...(process.env.IS_CAPACITOR === 'true' ? { output: 'export' } : {}),
+  // Solo activar exportación estática durante el build de producción para Capacitor
+  ...(isCapacitorExport ? { output: 'export' } : {}),
   images: {
     unoptimized: true,
     remotePatterns: [

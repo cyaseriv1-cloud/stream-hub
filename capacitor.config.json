@@ -1,7 +1,7 @@
 {
-  "appId": "com.streamhub.app",
-  "appName": "StreamHub",
-  "webDir": "out",
+  "appId": "com.magistv.streamapp",
+  "appName": "MagisTV",
+  "webDir": "dist",
   "bundledWebRuntime": false,
   "server": {
     "androidScheme": "https",

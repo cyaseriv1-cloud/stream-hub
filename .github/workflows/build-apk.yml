@@ -1,15 +1,15 @@
-name: Compilar APK Android (StreamHub)
+name: Compilar APK Android (MagisTV)
 
 on:
   push:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch: # Permite ejecutar la compilación manualmente con un clic en GitHub
+  workflow_dispatch:
 
 jobs:
   build-apk:
-    name: Compilar APK con Capacitor y Gradle
+    name: Compilar APK con Vite, Capacitor y Gradle
     runs-on: ubuntu-latest
 
     steps:
@@ -31,9 +31,7 @@ jobs:
       - name: 4. Instalar dependencias del proyecto
         run: npm ci || npm install
 
-      - name: 5. Generar export estático de Next.js (out/)
-        env:
-          IS_CAPACITOR: 'true'
+      - name: 5. Compilar proyecto Vite (dist/)
         run: npm run build
 
       - name: 6. Inicializar y sincronizar Capacitor Android
@@ -52,6 +50,6 @@ jobs:
       - name: 9. Subir APK como artefacto descargable
         uses: actions/upload-artifact@v4
         with:
-          name: StreamHub-Android-Debug-APK
+          name: MagisTV-Android-Debug-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14

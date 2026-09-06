@@ -32,6 +32,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# capacitor / android
-android/
+# android gradle build files
+android/.gradle/
+android/build/
+android/app/build/
+android/.idea/
+android/*.iml
+android/app/*.iml
 ios/

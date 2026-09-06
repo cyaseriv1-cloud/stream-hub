@@ -6,6 +6,7 @@ import {
   Volume2, 
   VolumeX, 
   Maximize, 
+  Minimize,
   RotateCcw, 
   RotateCw, 
   AlertTriangle,
@@ -28,15 +29,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Estados de la línea de tiempo
+  // Estados de línea de tiempo
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isDraggingTimeline, setIsDraggingTimeline] = useState(false);
 
   const hideTimeoutRef = useRef<number | null>(null);
 
-  // Formateador de tiempo mm:ss o hh:mm:ss
   const formatTime = (seconds: number) => {
     if (isNaN(seconds) || !isFinite(seconds) || seconds < 0) return '00:00';
     const h = Math.floor(seconds / 3600);
@@ -48,16 +49,28 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
     return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  const handleMouseMove = () => {
+  const showControlsTemporarily = () => {
     setControlsVisible(true);
     if (hideTimeoutRef.current) {
       window.clearTimeout(hideTimeoutRef.current);
     }
     hideTimeoutRef.current = window.setTimeout(() => {
-      if (isPlaying) {
+      if (isPlaying && !isDraggingTimeline) {
         setControlsVisible(false);
       }
     }, 3500);
+  };
+
+  const toggleControls = (e: React.MouseEvent) => {
+    // Si el clic fue directamente en la pantalla de video (no en los botones)
+    if ((e.target as HTMLElement).tagName === 'VIDEO' || (e.target as HTMLElement).id === 'video-touch-overlay') {
+      if (controlsVisible) {
+        setControlsVisible(false);
+        if (hideTimeoutRef.current) window.clearTimeout(hideTimeoutRef.current);
+      } else {
+        showControlsTemporarily();
+      }
+    }
   };
 
   useEffect(() => {
@@ -131,7 +144,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
           tryAutoplay();
         });
       } else {
-        setError('Este navegador no soporta streaming HLS.');
+        setError('Este navegador o dispositivo no soporta streaming HLS.');
         setIsLoading(false);
       }
     } else {
@@ -156,8 +169,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
     const onPlaying = () => {
       setIsLoading(false);
       setIsPlaying(true);
+      showControlsTemporarily();
     };
-    const onPause = () => setIsPlaying(false);
+    const onPause = () => {
+      setIsPlaying(false);
+      setControlsVisible(true);
+    };
 
     const onTimeUpdate = () => {
       if (!isDraggingTimeline) {
@@ -178,9 +195,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
     video.addEventListener('durationchange', onDurationChange);
     video.addEventListener('loadedmetadata', onDurationChange);
 
-    // Atajos de teclado (Smart TV remote / desktop)
+    // Escuchar cambios de pantalla completa
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+
+    // Atajos de teclado
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignorar si el usuario está escribiendo en un input
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
         return;
       }
@@ -212,6 +234,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
       video.removeEventListener('timeupdate', onTimeUpdate);
       video.removeEventListener('durationchange', onDurationChange);
       video.removeEventListener('loadedmetadata', onDurationChange);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
       window.removeEventListener('keydown', handleKeyDown);
       if (hls) {
         hls.destroy();
@@ -228,9 +251,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
     if (video.paused) {
       video.play();
       setIsPlaying(true);
+      showControlsTemporarily();
     } else {
       video.pause();
       setIsPlaying(false);
+      setControlsVisible(true);
     }
   };
 
@@ -239,6 +264,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
     if (!video) return;
     video.muted = !video.muted;
     setIsMuted(video.muted);
+    showControlsTemporarily();
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -249,28 +275,42 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
       videoRef.current.muted = val === 0;
       setIsMuted(val === 0);
     }
+    showControlsTemporarily();
   };
 
+  // Pantalla completa universal (Web + Android Capacitor)
   const toggleFullscreen = () => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    const video = videoRef.current;
+    if (!container) return;
+
     if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().catch(() => {});
+      if (container.requestFullscreen) {
+        container.requestFullscreen().catch(() => {
+          if ((video as any)?.webkitEnterFullscreen) {
+            (video as any).webkitEnterFullscreen();
+          }
+        });
+      } else if ((video as any)?.webkitEnterFullscreen) {
+        (video as any).webkitEnterFullscreen();
+      }
     } else {
-      document.exitFullscreen().catch(() => {});
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
     }
+    showControlsTemporarily();
   };
 
-  // Retroceder 10 segundos
   const seekBackward = () => {
     const video = videoRef.current;
     if (!video) return;
     const target = Math.max(0, video.currentTime - 10);
     video.currentTime = target;
     setCurrentTime(target);
-    setControlsVisible(true);
+    showControlsTemporarily();
   };
 
-  // Avanzar 10 segundos
   const seekForward = () => {
     const video = videoRef.current;
     if (!video) return;
@@ -278,10 +318,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
     const target = Math.min(maxTime, video.currentTime + 10);
     video.currentTime = target;
     setCurrentTime(target);
-    setControlsVisible(true);
+    showControlsTemporarily();
   };
 
-  // Cambiar posición en la línea de tiempo (Scrubbing)
   const handleTimelineChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newTime = parseFloat(e.target.value);
     setCurrentTime(newTime);
@@ -289,6 +328,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
 
   const handleTimelineMouseDown = () => {
     setIsDraggingTimeline(true);
+    if (hideTimeoutRef.current) window.clearTimeout(hideTimeoutRef.current);
   };
 
   const handleTimelineMouseUp = (e: React.MouseEvent<HTMLInputElement> | React.TouchEvent<HTMLInputElement>) => {
@@ -299,6 +339,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
       video.currentTime = newTime;
       setCurrentTime(newTime);
     }
+    showControlsTemporarily();
   };
 
   const handleManualRetry = () => {
@@ -316,34 +357,41 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
   return (
     <div
       ref={containerRef}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={() => isPlaying && setControlsVisible(false)}
-      className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden group select-none shadow-2xl border border-[#2a2a2a]"
+      onMouseMove={showControlsTemporarily}
+      onClick={toggleControls}
+      className={`relative w-full bg-black rounded-2xl overflow-hidden select-none shadow-2xl border border-[#2a2a2a] ${
+        isFullscreen ? 'h-screen w-screen rounded-none border-none' : 'aspect-video'
+      }`}
     >
       {/* Video Element */}
       <video
         ref={videoRef}
-        onClick={togglePlay}
         playsInline
         className="w-full h-full object-contain cursor-pointer"
       />
 
-      {/* Overlay Cargando... mientras bufferiza */}
+      {/* Touch Overlay invisible para capturar toques en móvil sin disparar botones */}
+      <div 
+        id="video-touch-overlay" 
+        className="absolute inset-0 z-10" 
+      />
+
+      {/* Overlay Cargando... */}
       {isLoading && !error && (
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center pointer-events-none z-20">
-          <div className="w-14 h-14 border-4 border-[#e50914] border-t-transparent rounded-full animate-spin mb-3 shadow-lg shadow-[#e50914]/40" />
-          <p className="text-white text-sm font-semibold tracking-wide animate-pulse">
+          <div className="w-12 sm:w-14 h-12 sm:h-14 border-4 border-[#e50914] border-t-transparent rounded-full animate-spin mb-3 shadow-lg shadow-[#e50914]/40" />
+          <p className="text-white text-xs sm:text-sm font-semibold tracking-wide animate-pulse">
             Cargando transmisión...
           </p>
         </div>
       )}
 
-      {/* Overlay de Error con Retry */}
+      {/* Overlay de Error */}
       {error && (
-        <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center p-6 text-center z-30">
+        <div className="absolute inset-0 bg-black/90 flex flex-col items-center justify-center p-6 text-center z-30 pointer-events-auto">
           <AlertTriangle className="w-12 h-12 text-[#e50914] mb-3" />
-          <h4 className="text-white font-bold text-lg mb-1">Error de Reproducción</h4>
-          <p className="text-gray-300 text-sm max-w-md mb-5">{error}</p>
+          <h4 className="text-white font-bold text-base sm:text-lg mb-1">Error de Transmisión</h4>
+          <p className="text-gray-300 text-xs sm:text-sm max-w-md mb-5">{error}</p>
           <button
             onClick={handleManualRetry}
             className="flex items-center gap-2 bg-[#e50914] hover:bg-[#f40612] text-white font-bold px-5 py-2.5 rounded-xl shadow-lg shadow-[#e50914]/40 transition-all hover:scale-105"
@@ -354,25 +402,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
         </div>
       )}
 
-      {/* Header superior del reproductor (Aparece en hover) */}
+      {/* 1. HEADER SUPERIOR (Aparece con controles) */}
       <div
-        className={`absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/90 via-black/50 to-transparent transition-opacity duration-300 z-20 flex items-center justify-between ${
-          controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        className={`absolute top-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-b from-black/90 via-black/50 to-transparent transition-opacity duration-300 z-20 flex items-center justify-between pointer-events-none ${
+          controlsVisible ? 'opacity-100' : 'opacity-0'
         }`}
       >
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 pr-2">
           <span className="w-2.5 h-2.5 rounded-full bg-[#e50914] animate-ping shrink-0" />
-          <h3 className="text-white font-bold text-sm sm:text-base drop-shadow truncate max-w-md">
-            {title || 'Lumina TV Reproductor'}
+          <h3 className="text-white font-bold text-xs sm:text-base drop-shadow truncate">
+            {title || 'Lumina TV'}
           </h3>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="shrink-0">
           {isVodContent ? (
-            <span className="text-[11px] font-extrabold bg-[#242424]/90 text-gray-200 border border-[#2a2a2a] px-2.5 py-0.5 rounded-md shadow">
-              PELÍCULA VOD
+            <span className="text-[10px] sm:text-xs font-bold bg-[#181818]/90 text-gray-200 border border-[#2a2a2a] px-2 py-0.5 rounded shadow">
+              PELÍCULA
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-[11px] font-black bg-[#e50914] text-white px-2 py-0.5 rounded-md shadow uppercase">
+            <span className="flex items-center gap-1 text-[10px] sm:text-xs font-black bg-[#e50914] text-white px-2 py-0.5 rounded shadow uppercase">
               <Radio className="w-3 h-3" />
               EN VIVO
             </span>
@@ -380,97 +428,111 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
         </div>
       </div>
 
-      {/* Barra de Controles Inferior (Aparece en hover) */}
+      {/* 2. CONTROLES CENTRALES (Estilo Netflix/YouTube Mobile - Play/Pause y Saltos de 10s) */}
       <div
-        className={`absolute bottom-0 left-0 right-0 p-3 sm:p-5 bg-gradient-to-t from-black/95 via-black/75 to-transparent transition-opacity duration-300 z-20 flex flex-col gap-2 ${
-          controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        className={`absolute inset-0 flex items-center justify-center gap-6 sm:gap-10 transition-opacity duration-300 z-20 pointer-events-none ${
+          controlsVisible ? 'opacity-100' : 'opacity-0'
         }`}
       >
-        {/* LÍNEA DE TIEMPO INTERACTIVA (Solo si tiene duración medible) */}
-        {isVodContent ? (
-          <div className="w-full flex flex-col gap-1.5 group/slider">
-            <div className="relative w-full flex items-center h-4 cursor-pointer">
-              {/* Barra de progreso interactiva */}
-              <input
-                type="range"
-                min={0}
-                max={duration}
-                step={0.1}
-                value={currentTime}
-                onChange={handleTimelineChange}
-                onMouseDown={handleTimelineMouseDown}
-                onMouseUp={handleTimelineMouseUp}
-                onTouchStart={handleTimelineMouseDown}
-                onTouchEnd={handleTimelineMouseUp}
-                className="w-full h-1.5 group-hover/slider:h-2 bg-[#2a2a2a] rounded-lg appearance-none cursor-pointer transition-all accent-[#e50914] focus:outline-none"
-                style={{
-                  background: `linear-gradient(to right, #e50914 ${progressPercent}%, #333333 ${progressPercent}%)`,
-                }}
-              />
-            </div>
+        {/* Retroceder 10s */}
+        {isVodContent && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              seekBackward();
+            }}
+            className="pointer-events-auto w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-black/60 hover:bg-black/80 active:scale-90 text-white border border-white/20 flex flex-col items-center justify-center transition-all shadow-xl backdrop-blur-sm"
+            aria-label="Retroceder 10 segundos"
+          >
+            <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+            <span className="text-[9px] sm:text-[10px] font-black -mt-0.5">10s</span>
+          </button>
+        )}
 
-            {/* Timestamps actual y total */}
-            <div className="flex items-center justify-between text-xs font-mono font-medium text-gray-300 px-0.5">
-              <span>{formatTime(currentTime)}</span>
-              <span className="text-gray-500">/</span>
-              <span className="text-gray-400">{formatTime(duration)}</span>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center justify-between text-xs text-gray-400 px-1 py-1">
-            <span className="flex items-center gap-1.5 font-bold text-[#e50914]">
-              <span className="w-2 h-2 rounded-full bg-[#e50914] animate-pulse" />
-              Transmisión continua 24/7 en tiempo real
-            </span>
-            <span className="text-gray-500 font-mono">1080p 60fps</span>
+        {/* Botón Central Play / Pause */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            togglePlay();
+          }}
+          className="pointer-events-auto w-14 h-14 sm:w-18 sm:h-18 rounded-full bg-[#e50914] hover:bg-[#f40612] active:scale-95 text-white flex items-center justify-center shadow-2xl shadow-[#e50914]/50 transition-all"
+          aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
+        >
+          {isPlaying ? (
+            <Pause className="w-6 h-6 sm:w-8 sm:h-8" />
+          ) : (
+            <Play className="w-6 h-6 sm:w-8 sm:h-8 fill-white ml-0.5" />
+          )}
+        </button>
+
+        {/* Avanzar 10s */}
+        {isVodContent && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              seekForward();
+            }}
+            className="pointer-events-auto w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-black/60 hover:bg-black/80 active:scale-90 text-white border border-white/20 flex flex-col items-center justify-center transition-all shadow-xl backdrop-blur-sm"
+            aria-label="Avanzar 10 segundos"
+          >
+            <RotateCw className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+            <span className="text-[9px] sm:text-[10px] font-black -mt-0.5">10s</span>
+          </button>
+        )}
+      </div>
+
+      {/* 3. BARRA INFERIOR (Línea de tiempo + Timestamps + Pantalla completa sin solapamientos) */}
+      <div
+        className={`absolute bottom-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/80 to-transparent transition-opacity duration-300 z-20 flex flex-col gap-2 pointer-events-auto ${
+          controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* LÍNEA DE TIEMPO INTERACTIVA */}
+        {isVodContent && (
+          <div className="w-full flex items-center h-4 py-1">
+            <input
+              type="range"
+              min={0}
+              max={duration}
+              step={0.1}
+              value={currentTime}
+              onChange={handleTimelineChange}
+              onMouseDown={handleTimelineMouseDown}
+              onMouseUp={handleTimelineMouseUp}
+              onTouchStart={handleTimelineMouseDown}
+              onTouchEnd={handleTimelineMouseUp}
+              className="w-full h-2 bg-[#333333] rounded-lg appearance-none cursor-pointer accent-[#e50914] focus:outline-none"
+              style={{
+                background: `linear-gradient(to right, #e50914 ${progressPercent}%, #333333 ${progressPercent}%)`,
+              }}
+            />
           </div>
         )}
 
-        {/* Fila de Botones y Herramientas */}
-        <div className="flex items-center justify-between gap-4 mt-0.5">
-          {/* Controles Izquierdos: Play/Pause, Rebobinar 10s, Avanzar 10s, Volumen */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Play / Pause */}
-            <button
-              onClick={togglePlay}
-              className="p-2.5 rounded-xl bg-[#e50914] hover:bg-[#f40612] text-white shadow-lg shadow-[#e50914]/40 transition-all hover:scale-105 active:scale-95"
-              aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
-              title={isPlaying ? 'Pausar (Espacio)' : 'Reproducir (Espacio)'}
-            >
-              {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-white" />}
-            </button>
-
-            {/* Retroceder 10 Segundos (-10s) */}
-            {isVodContent && (
-              <button
-                onClick={seekBackward}
-                className="flex items-center gap-1 px-2.5 py-2 rounded-xl bg-[#242424] hover:bg-[#2e2e2e] text-gray-200 hover:text-white border border-[#333333] transition-all hover:scale-105 active:scale-95 text-xs font-bold"
-                title="Retroceder 10 segundos (Flecha izquierda)"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-[#e50914]" />
-                <span>10s</span>
-              </button>
+        {/* Fila limpia de información y pantalla completa */}
+        <div className="flex items-center justify-between gap-3 pt-0.5">
+          {/* Lado Izquierdo: Tiempos de reproducción o indicador Live */}
+          <div className="flex items-center gap-3">
+            {isVodContent ? (
+              <div className="flex items-center gap-1.5 text-xs font-mono font-semibold text-gray-200">
+                <span className="text-white">{formatTime(currentTime)}</span>
+                <span className="text-gray-500">/</span>
+                <span className="text-gray-400">{formatTime(duration)}</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-xs font-bold text-[#e50914]">
+                <span className="w-2 h-2 rounded-full bg-[#e50914] animate-pulse" />
+                <span>Transmisión en Vivo</span>
+              </div>
             )}
 
-            {/* Avanzar 10 Segundos (+10s) */}
-            {isVodContent && (
-              <button
-                onClick={seekForward}
-                className="flex items-center gap-1 px-2.5 py-2 rounded-xl bg-[#242424] hover:bg-[#2e2e2e] text-gray-200 hover:text-white border border-[#333333] transition-all hover:scale-105 active:scale-95 text-xs font-bold"
-                title="Avanzar 10 segundos (Flecha derecha)"
-              >
-                <span>10s</span>
-                <RotateCw className="w-3.5 h-3.5 text-[#e50914]" />
-              </button>
-            )}
-
-            {/* Volumen */}
-            <div className="flex items-center gap-2 ml-1">
+            {/* Control de Volumen (En móvil solo botón silenciar para no saturar, en PC deslizador) */}
+            <div className="flex items-center gap-1.5">
               <button
                 onClick={toggleMute}
-                className="p-1.5 text-gray-300 hover:text-white transition-colors"
+                className="p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
                 aria-label={isMuted ? 'Activar sonido' : 'Silenciar'}
-                title={isMuted ? 'Activar sonido (M)' : 'Silenciar (M)'}
               >
                 {isMuted || volume === 0 ? (
                   <VolumeX className="w-4 h-4 text-[#e50914]" />
@@ -485,24 +547,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
                 step="0.05"
                 value={isMuted ? 0 : volume}
                 onChange={handleVolumeChange}
-                className="w-14 sm:w-20 accent-[#e50914] h-1.5 bg-[#2a2a2a] rounded-lg cursor-pointer"
+                className="hidden sm:inline-block w-16 accent-[#e50914] h-1.5 bg-[#2a2a2a] rounded-lg cursor-pointer"
               />
             </div>
           </div>
 
-          {/* Controles Derechos: Atajos y Pantalla Completa */}
+          {/* Lado Derecho: Botón Pantalla Completa destacado y fácil de tocar */}
           <div className="flex items-center gap-2">
-            <span className="hidden sm:inline-block text-[11px] font-bold text-gray-400 bg-[#181818] border border-[#2a2a2a] px-2 py-1 rounded">
-              Atajos: [Espacio] [← 10s] [10s →] [F]
-            </span>
-
             <button
               onClick={toggleFullscreen}
-              className="p-2 rounded-xl text-gray-300 hover:text-white bg-[#242424] hover:bg-[#2e2e2e] border border-[#333333] transition-colors"
+              className="p-2 sm:p-2.5 rounded-xl bg-white/15 hover:bg-white/25 active:bg-[#e50914] text-white flex items-center justify-center gap-1.5 transition-all text-xs font-bold border border-white/10 shadow-lg"
               aria-label="Pantalla completa"
-              title="Pantalla completa (F)"
             >
-              <Maximize className="w-4 h-4" />
+              {isFullscreen ? (
+                <>
+                  <Minimize className="w-4 h-4" />
+                  <span className="hidden sm:inline">Salir</span>
+                </>
+              ) : (
+                <>
+                  <Maximize className="w-4 h-4" />
+                  <span className="hidden sm:inline">Ampliar</span>
+                </>
+              )}
             </button>
           </div>
         </div>

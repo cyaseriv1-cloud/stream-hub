@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Hls from 'hls.js';
 import { 
   Play, 
@@ -6,17 +6,23 @@ import {
   Volume2, 
   VolumeX, 
   Maximize, 
-  Minimize,
+  Minimize, 
   RotateCcw, 
   RotateCw, 
   AlertTriangle,
-  Radio
+  Radio,
+  Scan
 } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { StatusBar } from '@capacitor/status-bar';
+import { ScreenOrientation } from '@capacitor/screen-orientation';
 
 interface VideoPlayerProps {
   source: string;
   title?: string;
 }
+
+export type VideoScalingMode = 'contain' | 'cover' | 'fill';
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -31,12 +37,21 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // Modo de relación de aspecto / aprovechamiento de pantalla
+  // 'contain' = Ajustar con barras originales 16:9
+  // 'cover' = Llenar pantalla completa (Zoom sin bordes negros para pantallas 19.5:9 / 20:9)
+  // 'fill' = Estirar 100% de la pantalla
+  const [scalingMode, setScalingMode] = useState<VideoScalingMode>('contain');
+  const [scalingToast, setScalingToast] = useState<string | null>(null);
+  const scalingToastTimerRef = useRef<number | null>(null);
+
   // Estados de línea de tiempo
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isDraggingTimeline, setIsDraggingTimeline] = useState(false);
 
   const hideTimeoutRef = useRef<number | null>(null);
+  const lastTapRef = useRef<number>(0);
 
   const formatTime = (seconds: number) => {
     if (isNaN(seconds) || !isFinite(seconds) || seconds < 0) return '00:00';
@@ -49,7 +64,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
     return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  const showControlsTemporarily = () => {
+  const showControlsTemporarily = useCallback(() => {
     setControlsVisible(true);
     if (hideTimeoutRef.current) {
       window.clearTimeout(hideTimeoutRef.current);
@@ -59,20 +74,181 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
         setControlsVisible(false);
       }
     }, 3500);
-  };
+  }, [isPlaying, isDraggingTimeline]);
 
-  const toggleControls = (e: React.MouseEvent) => {
-    // Si el clic fue directamente en la pantalla de video (no en los botones)
-    if ((e.target as HTMLElement).tagName === 'VIDEO' || (e.target as HTMLElement).id === 'video-touch-overlay') {
-      if (controlsVisible) {
-        setControlsVisible(false);
-        if (hideTimeoutRef.current) window.clearTimeout(hideTimeoutRef.current);
-      } else {
-        showControlsTemporarily();
-      }
+  // Alternar visualización de controles al tocar pantalla
+  const toggleControls = () => {
+    if (controlsVisible) {
+      setControlsVisible(false);
+      if (hideTimeoutRef.current) window.clearTimeout(hideTimeoutRef.current);
+    } else {
+      showControlsTemporarily();
     }
   };
 
+  // Alternar modo de relación de aspecto (Ajustar vs Llenar Pantalla vs Estirar)
+  const cycleScalingMode = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    let nextMode: VideoScalingMode = 'contain';
+    let label = '';
+
+    if (scalingMode === 'contain') {
+      nextMode = 'cover';
+      label = 'Llenar Pantalla (Sin bordes negros)';
+    } else if (scalingMode === 'cover') {
+      nextMode = 'fill';
+      label = 'Estirar Pantalla (100%)';
+    } else {
+      nextMode = 'contain';
+      label = 'Ajustar (Original 16:9)';
+    }
+
+    setScalingMode(nextMode);
+    setScalingToast(label);
+
+    if (scalingToastTimerRef.current) {
+      window.clearTimeout(scalingToastTimerRef.current);
+    }
+    scalingToastTimerRef.current = window.setTimeout(() => {
+      setScalingToast(null);
+    }, 2200);
+
+    showControlsTemporarily();
+  };
+
+  // Doble toque en pantalla para alternar zoom / llenar pantalla
+  const handleScreenTouch = (e: React.MouseEvent) => {
+    // Si se hizo clic sobre controles interactivos, no interferir
+    if ((e.target as HTMLElement).closest('button, input, a')) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) {
+      // Doble toque: alterna entre Ajustar y Llenar Pantalla
+      cycleScalingMode();
+      lastTapRef.current = 0;
+      return;
+    }
+    lastTapRef.current = now;
+    toggleControls();
+  };
+
+  // Entrar a Pantalla Completa
+  const enterFullscreen = async () => {
+    setIsFullscreen(true);
+    // Cambiar automáticamente a modo Llenar para aprovechar toda la pantalla móvil
+    setScalingMode('cover');
+    setScalingToast('Pantalla Completa: Llenar Pantalla');
+    if (scalingToastTimerRef.current) window.clearTimeout(scalingToastTimerRef.current);
+    scalingToastTimerRef.current = window.setTimeout(() => setScalingToast(null), 2000);
+
+    const container = containerRef.current;
+    const video = videoRef.current;
+
+    // 1. Android Nativo: Ocultar barras de sistema y rotar a horizontal
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await StatusBar.hide();
+      } catch {
+        // Ignore
+      }
+      try {
+        await ScreenOrientation.lock({ orientation: 'landscape' });
+      } catch {
+        // Ignore
+      }
+    }
+
+    // 2. DOM Fullscreen API si está disponible
+    if (container) {
+      if (container.requestFullscreen) {
+        container.requestFullscreen().catch(() => {
+          if ((video as any)?.webkitEnterFullscreen) {
+            (video as any).webkitEnterFullscreen();
+          }
+        });
+      } else if ((video as any)?.webkitEnterFullscreen) {
+        (video as any).webkitEnterFullscreen();
+      }
+    }
+
+    showControlsTemporarily();
+  };
+
+  // Salir de Pantalla Completa
+  const exitFullscreen = async () => {
+    setIsFullscreen(false);
+
+    // 1. Android Nativo: Restaurar barra de estado y desbloquear orientación
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await StatusBar.show();
+      } catch {
+        // Ignore
+      }
+      try {
+        await ScreenOrientation.unlock();
+      } catch {
+        // Ignore
+      }
+    }
+
+    // 2. Salir de DOM Fullscreen si sigue activo
+    if (document.fullscreenElement) {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    } else if ((document as any).webkitFullscreenElement && (document as any).webkitExitFullscreen) {
+      (document as any).webkitExitFullscreen();
+    }
+
+    showControlsTemporarily();
+  };
+
+  const toggleFullscreen = () => {
+    if (isFullscreen) {
+      exitFullscreen();
+    } else {
+      enterFullscreen();
+    }
+  };
+
+  // Escuchar evento personalizado del botón atrás de Android
+  useEffect(() => {
+    const handleExitFsEvent = () => {
+      if (isFullscreen) {
+        exitFullscreen();
+      }
+    };
+    window.addEventListener('lumina:exitFullscreen', handleExitFsEvent);
+    return () => {
+      window.removeEventListener('lumina:exitFullscreen', handleExitFsEvent);
+    };
+  }, [isFullscreen]);
+
+  // Escuchar cambios nativos de pantalla completa del navegador
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isDomFull = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
+      if (!isDomFull && isFullscreen) {
+        setIsFullscreen(false);
+        if (Capacitor.isNativePlatform()) {
+          StatusBar.show().catch(() => {});
+          ScreenOrientation.unlock().catch(() => {});
+        }
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
+  }, [isFullscreen]);
+
+  // Ciclo de vida y streaming HLS / MP4
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !source) return;
@@ -195,12 +371,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
     video.addEventListener('durationchange', onDurationChange);
     video.addEventListener('loadedmetadata', onDurationChange);
 
-    // Escuchar cambios de pantalla completa
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-
     // Atajos de teclado
     const handleKeyDown = (e: KeyboardEvent) => {
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
@@ -234,7 +404,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
       video.removeEventListener('timeupdate', onTimeUpdate);
       video.removeEventListener('durationchange', onDurationChange);
       video.removeEventListener('loadedmetadata', onDurationChange);
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
       window.removeEventListener('keydown', handleKeyDown);
       if (hls) {
         hls.destroy();
@@ -242,8 +411,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
       if (hideTimeoutRef.current) {
         window.clearTimeout(hideTimeoutRef.current);
       }
+      if (scalingToastTimerRef.current) {
+        window.clearTimeout(scalingToastTimerRef.current);
+      }
     };
-  }, [source, retryCount, isDraggingTimeline]);
+  }, [source, retryCount, isDraggingTimeline, showControlsTemporarily]);
 
   const togglePlay = () => {
     const video = videoRef.current;
@@ -274,30 +446,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
       videoRef.current.volume = val;
       videoRef.current.muted = val === 0;
       setIsMuted(val === 0);
-    }
-    showControlsTemporarily();
-  };
-
-  // Pantalla completa universal (Web + Android Capacitor)
-  const toggleFullscreen = () => {
-    const container = containerRef.current;
-    const video = videoRef.current;
-    if (!container) return;
-
-    if (!document.fullscreenElement) {
-      if (container.requestFullscreen) {
-        container.requestFullscreen().catch(() => {
-          if ((video as any)?.webkitEnterFullscreen) {
-            (video as any).webkitEnterFullscreen();
-          }
-        });
-      } else if ((video as any)?.webkitEnterFullscreen) {
-        (video as any).webkitEnterFullscreen();
-      }
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen().catch(() => {});
-      }
     }
     showControlsTemporarily();
   };
@@ -354,27 +502,44 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
   const isVodContent = isFinite(duration) && duration > 0;
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
+  // Clase CSS según el modo de escalado
+  const getScalingClass = () => {
+    switch (scalingMode) {
+      case 'cover':
+        return 'w-full h-full object-cover';
+      case 'fill':
+        return 'w-full h-full object-fill';
+      case 'contain':
+      default:
+        return 'w-full h-full object-contain';
+    }
+  };
+
   return (
     <div
       ref={containerRef}
       onMouseMove={showControlsTemporarily}
-      onClick={toggleControls}
-      className={`relative w-full bg-black rounded-2xl overflow-hidden select-none shadow-2xl border border-[#2a2a2a] ${
-        isFullscreen ? 'h-screen w-screen rounded-none border-none' : 'aspect-video'
+      onClick={handleScreenTouch}
+      className={`relative w-full bg-black select-none shadow-2xl transition-all duration-200 ${
+        isFullscreen
+          ? 'is-fullscreen-player fixed inset-0 z-[99999] w-screen h-screen m-0 p-0 rounded-none border-none overflow-hidden flex items-center justify-center bg-black'
+          : 'aspect-video rounded-2xl overflow-hidden border border-[#2a2a2a]'
       }`}
     >
-      {/* Video Element */}
+      {/* Video Element con escalado dinámico (Ajustar, Llenar, Estirar) */}
       <video
         ref={videoRef}
         playsInline
-        className="w-full h-full object-contain cursor-pointer"
+        className={`${getScalingClass()} cursor-pointer transition-all duration-300`}
       />
 
-      {/* Touch Overlay invisible para capturar toques en móvil sin disparar botones */}
-      <div 
-        id="video-touch-overlay" 
-        className="absolute inset-0 z-10" 
-      />
+      {/* Notificación flotante de modo de pantalla/escalado */}
+      {scalingToast && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 bg-black/85 backdrop-blur-md border border-white/20 text-white text-xs sm:text-sm font-bold px-4 py-2 rounded-full shadow-2xl pointer-events-none flex items-center gap-2 animate-bounce">
+          <Scan className="w-4 h-4 text-[#e50914]" />
+          <span>{scalingToast}</span>
+        </div>
+      )}
 
       {/* Overlay Cargando... */}
       {isLoading && !error && (
@@ -388,7 +553,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
 
       {/* Overlay de Error */}
       {error && (
-        <div className="absolute inset-0 bg-black/90 flex flex-col items-center justify-center p-6 text-center z-30 pointer-events-auto">
+        <div 
+          onClick={(e) => e.stopPropagation()}
+          className="absolute inset-0 bg-black/90 flex flex-col items-center justify-center p-6 text-center z-30 pointer-events-auto"
+        >
           <AlertTriangle className="w-12 h-12 text-[#e50914] mb-3" />
           <h4 className="text-white font-bold text-base sm:text-lg mb-1">Error de Transmisión</h4>
           <p className="text-gray-300 text-xs sm:text-sm max-w-md mb-5">{error}</p>
@@ -402,7 +570,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
         </div>
       )}
 
-      {/* 1. HEADER SUPERIOR (Aparece con controles) */}
+      {/* 1. HEADER SUPERIOR */}
       <div
         className={`absolute top-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-b from-black/90 via-black/50 to-transparent transition-opacity duration-300 z-20 flex items-center justify-between pointer-events-none ${
           controlsVisible ? 'opacity-100' : 'opacity-0'
@@ -414,7 +582,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
             {title || 'Lumina TV'}
           </h3>
         </div>
-        <div className="shrink-0">
+        <div className="shrink-0 flex items-center gap-2">
           {isVodContent ? (
             <span className="text-[10px] sm:text-xs font-bold bg-[#181818]/90 text-gray-200 border border-[#2a2a2a] px-2 py-0.5 rounded shadow">
               PELÍCULA
@@ -428,7 +596,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
         </div>
       </div>
 
-      {/* 2. CONTROLES CENTRALES (Estilo Netflix/YouTube Mobile - Play/Pause y Saltos de 10s) */}
+      {/* 2. CONTROLES CENTRALES (Play/Pause y saltos de 10s) */}
       <div
         className={`absolute inset-0 flex items-center justify-center gap-6 sm:gap-10 transition-opacity duration-300 z-20 pointer-events-none ${
           controlsVisible ? 'opacity-100' : 'opacity-0'
@@ -441,7 +609,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
               e.stopPropagation();
               seekBackward();
             }}
-            className="pointer-events-auto w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-black/60 hover:bg-black/80 active:scale-90 text-white border border-white/20 flex flex-col items-center justify-center transition-all shadow-xl backdrop-blur-sm"
+            className="pointer-events-auto w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-black/60 hover:bg-black/80 active:scale-90 text-white border border-white/20 flex flex-col items-center justify-center transition-all shadow-xl backdrop-blur-sm"
             aria-label="Retroceder 10 segundos"
           >
             <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
@@ -472,7 +640,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
               e.stopPropagation();
               seekForward();
             }}
-            className="pointer-events-auto w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-black/60 hover:bg-black/80 active:scale-90 text-white border border-white/20 flex flex-col items-center justify-center transition-all shadow-xl backdrop-blur-sm"
+            className="pointer-events-auto w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-black/60 hover:bg-black/80 active:scale-90 text-white border border-white/20 flex flex-col items-center justify-center transition-all shadow-xl backdrop-blur-sm"
             aria-label="Avanzar 10 segundos"
           >
             <RotateCw className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
@@ -481,7 +649,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
         )}
       </div>
 
-      {/* 3. BARRA INFERIOR (Línea de tiempo + Timestamps + Pantalla completa sin solapamientos) */}
+      {/* 3. BARRA INFERIOR DESPEJADA */}
       <div
         className={`absolute bottom-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/80 to-transparent transition-opacity duration-300 z-20 flex flex-col gap-2 pointer-events-auto ${
           controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
@@ -510,9 +678,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
           </div>
         )}
 
-        {/* Fila limpia de información y pantalla completa */}
+        {/* Fila de controles inferiores */}
         <div className="flex items-center justify-between gap-3 pt-0.5">
-          {/* Lado Izquierdo: Tiempos de reproducción o indicador Live */}
+          {/* Lado Izquierdo: Timestamps y botón de Silencio */}
           <div className="flex items-center gap-3">
             {isVodContent ? (
               <div className="flex items-center gap-1.5 text-xs font-mono font-semibold text-gray-200">
@@ -527,7 +695,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
               </div>
             )}
 
-            {/* Control de Volumen (En móvil solo botón silenciar para no saturar, en PC deslizador) */}
+            {/* Control de Audio */}
             <div className="flex items-center gap-1.5">
               <button
                 onClick={toggleMute}
@@ -552,8 +720,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
             </div>
           </div>
 
-          {/* Lado Derecho: Botón Pantalla Completa destacado y fácil de tocar */}
+          {/* Lado Derecho: Botón de Llenar Pantalla / Aspect Ratio + Pantalla Completa */}
           <div className="flex items-center gap-2">
+            {/* Botón para cambiar tamaño y llenar pantalla sin bordes negros */}
+            <button
+              onClick={cycleScalingMode}
+              className="p-1.5 sm:p-2 rounded-xl bg-white/15 hover:bg-white/25 active:bg-[#e50914] text-white flex items-center gap-1.5 transition-all text-xs font-bold border border-white/10 shadow-lg"
+              title="Aprovechar toda la pantalla (quitar bordes negros)"
+              aria-label="Ajustar o Llenar Pantalla"
+            >
+              <Scan className="w-3.5 h-3.5 text-[#e50914]" />
+              <span className="text-[11px] font-semibold">
+                {scalingMode === 'contain' ? 'Ajustar' : scalingMode === 'cover' ? 'Llenar' : 'Estirar'}
+              </span>
+            </button>
+
+            {/* Botón Pantalla Completa */}
             <button
               onClick={toggleFullscreen}
               className="p-2 sm:p-2.5 rounded-xl bg-white/15 hover:bg-white/25 active:bg-[#e50914] text-white flex items-center justify-center gap-1.5 transition-all text-xs font-bold border border-white/10 shadow-lg"

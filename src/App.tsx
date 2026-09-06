@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Header } from './components/Layout/Header';
 import { Footer } from './components/Layout/Footer';
+import { AndroidBackButtonHandler } from './components/AndroidBackButtonHandler';
 
 // Páginas de la aplicación
 import { Home } from './pages/Home';
@@ -16,6 +17,9 @@ import { Register } from './pages/Register';
 export const App: React.FC = () => {
   return (
     <BrowserRouter>
+      {/* Manejador de botón atrás y gestos de Android */}
+      <AndroidBackButtonHandler />
+
       <div className="min-h-screen flex flex-col bg-[#0f0f0f] text-white selection:bg-[#e50914] selection:text-white">
         {/* Header Global */}
         <Header />

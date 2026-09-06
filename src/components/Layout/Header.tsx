@@ -30,7 +30,7 @@ export const Header: React.FC = () => {
             <Tv className="w-5 h-5 text-white" />
           </div>
           <div className="flex items-center text-xl sm:text-2xl font-black tracking-wider">
-            <span className="text-white">MAGIS</span>
+            <span className="text-white">LUMINA</span>
             <span className="text-[#e50914] ml-0.5 drop-shadow-[0_0_12px_rgba(229,9,20,0.6)]">TV</span>
           </div>
         </Link>

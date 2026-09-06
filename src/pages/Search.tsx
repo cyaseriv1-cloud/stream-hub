@@ -51,7 +51,7 @@ export const Search: React.FC = () => {
       {/* Input de Búsqueda Grande */}
       <div className="text-center space-y-3 pt-4">
         <h1 className="text-2xl sm:text-3xl font-black text-white tracking-wide">
-          Buscador Global MagisTV
+          Buscador Global Lumina TV
         </h1>
         <p className="text-sm text-gray-400">
           Encuentra canales de televisión, transmisiones en vivo, películas y series al instante.

@@ -5,7 +5,7 @@ import { auth } from '../firebase';
 export function useAuth() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     // Si hay un usuario dummy en localStorage para testing offline
-    const saved = localStorage.getItem('magis_demo_user');
+    const saved = localStorage.getItem('lumina_demo_user');
     return saved ? JSON.parse(saved) : null;
   });
   const [loading, setLoading] = useState<boolean>(true);
@@ -16,7 +16,7 @@ export function useAuth() {
         if (user) {
           setCurrentUser(user);
         } else {
-          const saved = localStorage.getItem('magis_demo_user');
+          const saved = localStorage.getItem('lumina_demo_user');
           setCurrentUser(saved ? JSON.parse(saved) : null);
         }
         setLoading(false);
@@ -33,7 +33,7 @@ export function useAuth() {
     } catch (e) {
       console.warn('Firebase signOut fallback', e);
     }
-    localStorage.removeItem('magis_demo_user');
+    localStorage.removeItem('lumina_demo_user');
     setCurrentUser(null);
   };
 

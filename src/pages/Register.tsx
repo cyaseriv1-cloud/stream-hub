@@ -40,7 +40,7 @@ export const Register: React.FC = () => {
         setError('La contraseña es muy débil.');
       } else {
         // Modo demo fallback
-        localStorage.setItem('magis_demo_user', JSON.stringify({ email, uid: 'demo-uid-reg' }));
+        localStorage.setItem('lumina_demo_user', JSON.stringify({ email, uid: 'demo-uid-reg' }));
         navigate('/');
         return;
       }
@@ -58,7 +58,7 @@ export const Register: React.FC = () => {
             <Tv className="w-7 h-7 text-white" />
           </div>
           <h2 className="text-2xl font-black text-white tracking-wide">
-            Crear Cuenta MagisTV
+            Crear Cuenta Lumina TV
           </h2>
           <p className="text-xs text-gray-400">
             Regístrate para guardar favoritos y sincronizar tus canales.

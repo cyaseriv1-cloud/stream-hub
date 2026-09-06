@@ -1,6 +1,6 @@
 {
-  "appId": "com.magistv.streamapp",
-  "appName": "MagisTV",
+  "appId": "com.luminatv.app",
+  "appName": "Lumina TV",
   "webDir": "dist",
   "bundledWebRuntime": false,
   "server": {

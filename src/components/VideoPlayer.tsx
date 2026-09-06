@@ -246,7 +246,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ source, title }) => {
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-[#e50914] animate-ping" />
           <h3 className="text-white font-bold text-sm sm:text-base drop-shadow truncate max-w-md">
-            {title || 'MagisTV Reproductor'}
+            {title || 'Lumina TV Reproductor'}
           </h3>
         </div>
         <span className="text-[11px] font-bold bg-[#181818]/80 text-gray-300 border border-[#2a2a2a] px-2 py-0.5 rounded">

@@ -7,11 +7,11 @@ export const Footer: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-gray-400">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-[#e50914] flex items-center justify-center text-white font-black text-xs shadow-md shadow-[#e50914]/40">
-            M
+            L
           </div>
           <div>
             <div className="font-extrabold text-white tracking-wider flex items-center">
-              MAGIS<span className="text-[#e50914] ml-0.5">TV</span>
+              LUMINA<span className="text-[#e50914] ml-0.5">TV</span>
             </div>
             <p className="text-xs text-gray-500">Streaming en Vivo y Películas VOD</p>
           </div>

@@ -30,7 +30,7 @@ export const Login: React.FC = () => {
       } else {
         // Fallback para modo demo si no hay proyecto Firebase conectado
         if (email.includes('@') && password.length >= 6) {
-          localStorage.setItem('magis_demo_user', JSON.stringify({ email, uid: 'demo-uid-123' }));
+          localStorage.setItem('lumina_demo_user', JSON.stringify({ email, uid: 'demo-uid-123' }));
           navigate('/');
           return;
         }
@@ -53,7 +53,7 @@ export const Login: React.FC = () => {
             Iniciar Sesión
           </h2>
           <p className="text-xs text-gray-400">
-            Accede a todo el catálogo de canales y películas MagisTV.
+            Accede a todo el catálogo de canales y películas Lumina TV.
           </p>
         </div>
 
@@ -106,7 +106,7 @@ export const Login: React.FC = () => {
             disabled={loading}
             className="w-full bg-[#e50914] hover:bg-[#f40612] disabled:opacity-50 text-white font-bold py-3 rounded-xl shadow-lg shadow-[#e50914]/40 flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
           >
-            {loading ? 'Verificando...' : 'Entrar a MagisTV'}
+            {loading ? 'Verificando...' : 'Entrar a Lumina TV'}
             {!loading && <ArrowRight className="w-4 h-4" />}
           </button>
         </form>

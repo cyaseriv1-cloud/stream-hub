@@ -15,7 +15,7 @@ export const MovieDetail: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     try {
-      const stored = localStorage.getItem('magistv_favorites');
+      const stored = localStorage.getItem('lumina_favorites');
       const favs: string[] = stored ? JSON.parse(stored) : [];
       setIsFavorite(favs.includes(id));
     } catch {
@@ -26,7 +26,7 @@ export const MovieDetail: React.FC = () => {
   const toggleFavorite = () => {
     if (!id) return;
     try {
-      const stored = localStorage.getItem('magistv_favorites');
+      const stored = localStorage.getItem('lumina_favorites');
       let favs: string[] = stored ? JSON.parse(stored) : [];
       if (favs.includes(id)) {
         favs = favs.filter((item) => item !== id);
@@ -35,7 +35,7 @@ export const MovieDetail: React.FC = () => {
         favs.push(id);
         setIsFavorite(true);
       }
-      localStorage.setItem('magistv_favorites', JSON.stringify(favs));
+      localStorage.setItem('lumina_favorites', JSON.stringify(favs));
     } catch {
       setIsFavorite(!isFavorite);
     }
